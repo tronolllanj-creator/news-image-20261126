@@ -1,484 +1,252 @@
 import sys
 from PIL import Image, ImageDraw, ImageFont
 
-S = 1024
-PAPER = 0xF7F1E3
-INK = 0x14213D
-RED = 0xC1272D
-NAVY = 0x1B2A4A
-TEAL = 0x0E7C7B
-GOLD = 0xD9A441
+W, H = 1024, 1024
+BG = '#F7F1E3'
+INK = '#14213D'
+RED = '#C1272D'
+NAVY = '#1B2A4A'
+TEAL = '#0E7C7B'
+GOLD = '#D9A441'
 
-FB_P = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-FR_P = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+FNT_BOLD_44 = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 44)
+FNT_BOLD_36 = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 36)
+FNT_BOLD_30 = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 30)
+FNT_REG_24 = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 24)
+FNT_REG_22 = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 22)
 
-_font_cache = {}
-
-def font(size, bold=False):
-    size = int(size)
-    key = (size, bold)
-    if key not in _font_cache:
-        _font_cache[key] = ImageFont.truetype(FB_P if bold else FR_P, size)
-    return _font_cache[key]
-
-def wrap_text(draw, text, fnt, maxw):
+def wrap_text(draw, text, font, max_w):
     words = text.split()
-    lines = []
-    cur = ""
+    lines, cur = [], ''
     for w in words:
-        t = (cur + " " + w).strip()
-        if draw.textlength(t, font=fnt) <= maxw:
-            cur = t
+        test = (cur + ' ' + w).strip()
+        if draw.textlength(test, font=font) <= max_w:
+            cur = test
         else:
             if cur:
                 lines.append(cur)
             cur = w
     if cur:
         lines.append(cur)
-    return lines if lines else [""]
+    return lines
 
-def draw_wrapped(draw, xy, lines, fnt, fill, leading=None):
-    x, y = int(xy[0]), int(xy[1])
+def draw_wrapped(draw, xy, lines, font, fill, leading=6):
+    x, y = xy
     for line in lines:
-        draw.text((x, y), line, font=fnt, fill=fill)
-        y += int(fnt.size * (1.0 if leading is None else leading))
+        draw.text((int(x), int(y)), line, font=font, fill=fill)
+        y += font.size + leading
 
-def rrect(draw, box, radius, fill=None, outline=None, width=1):
-    draw.rounded_rectangle([int(box[0]), int(box[1]), int(box[2]), int(box[3])],
-                           radius=int(radius), fill=fill, outline=outline, width=int(width))
+def draw_globe(draw, cx, cy, r):
+    draw.ellipse([int(cx-r), int(cy-r), int(cx+r), int(cy+r)], fill=TEAL, outline=NAVY, width=3)
+    for lat in range(-60, 61, 30):
+        yy = int(cy + r * 0.6 * (lat/90))
+        draw.arc([int(cx-r), yy-int(r*0.1), int(cx+r), yy+int(r*0.1)], 0, 180, fill=NAVY, width=2)
+    for lon in range(-150, 151, 60):
+        xx = int(cx + r * 0.6 * (lon/180))
+        draw.arc([xx-int(r*0.1), int(cy-r), xx+int(r*0.1), int(cy+r)], 90, 270, fill=NAVY, width=2)
+    draw.ellipse([int(cx-r*0.15), int(cy-r*0.15), int(cx+r*0.15), int(cy+r*0.15)], fill=GOLD)
 
-MONTHA = BLUE = TEAL
-DAY = GOLD
+def draw_flames(draw, x, y, h, color=RED):
+    for i in range(5):
+        fx = x + (i-2)*8
+        draw.polygon([(int(fx), int(y)), (int(fx-10), int(y-h)), (int(fx+10), int(y-h))], fill=color)
+        draw.polygon([(int(fx), int(y-h//2)), (int(fx-6), int(y-h)), (int(fx+6), int(y-h))], fill=GOLD)
 
-def chip(draw, xy, label, color):
-    f = font(13, True)
-    w = int(draw.textlength(label, font=f))
-    x, y = int(xy[0]), int(xy[1])
-    h = int(f.size * 1.5)
-    pad = 6
-    rrect(draw, (x, y, x + w + 2 * pad, y + h), h // 2, fill=color)
-    draw.text((x + pad, y + (h - f.size)//2), label, font=f, fill=PAPER)
-    return x + w + 2 * pad, y + h
+def draw_tanker(draw, x, y):
+    draw.rectangle([int(x-40), int(y-15), int(x+40), int(y+10)], fill='#3A3A3A')
+    draw.rectangle([int(x-30), int(y-35), int(x+30), int(y-15)], fill='#555')
+    draw.ellipse([int(x-35), int(y+5), int(x-15), int(y+25)], fill='#222')
+    draw.ellipse([int(x+15), int(y+5), int(x+35), int(y+25)], fill='#222')
+    draw.rectangle([int(x-10), int(y-40), int(x+10), int(y-35)], fill=RED)
 
-def panel_icon(draw, kind, x, y, colors):
-    W, H, L, R, A, T, G = [int(v) for v in (15, 12, TEAL, GOLD, RED, NAVY, 0x8A94A6)]
-    if kind == "flame":
-        pts = [(x + W//2, y), (x + W, y + H), (x, y + H)]
-        draw.polygon([tuple(map(int, p)) for p in pts], fill=RED)
-        draw.ellipse([x + 4, y + 5, x + W - 4, y + H], fill=GOLD)
-    elif kind == "ship":
-        rrect(draw, (x, y + 2, x + W, y + 7), 1, fill=T)
-        draw.polygon([(x + 7, y), (x + 10, y + 2), (x + 4, y + 2)], fill=T)
-        draw.line([(x, y + 9), (x + W, y + 9)], fill=INK, width=1)
-    elif kind == "building":
-        draw.rectangle([x, y + 2, x + W, y + H], fill=T)
-        for i in range(3):
-            for j in range(2):
-                draw.rectangle([x + 2 + i * 4, y + 4 + j * 3, x + 4 + i * 4, y + 6 + j * 3], fill=PAPER)
-    elif kind == "rocket":
-        draw.polygon([(x + W//2, y), (x + 11, y + H), (x + W - 11, y + H)], fill=T)
-        draw.ellipse([x + W//2 - 2, y + 3, x + W//2 + 2, y + 6], fill=PAPER)
-        draw.line([(x + 3, y + H), (x + 7, y + H - 3)], fill=RED, width=1)
-    elif kind == "shield":
-        draw.polygon([(x + W//2, y), (x + W, y + 3), (x + W//2, y + H), (x, y + 3)], fill=T)
-        draw.line([(x + W//2, y + 2), (x + W//2, y + H - 2)], fill=PAPER, width=1)
-    elif kind == "flag":
-        draw.line([(x + 2, y), (x + 2, y + H)], fill=G, width=1)
-        draw.rectangle([x + 2, y + 1, x + 8, y + 6], fill=GOLD)
-        draw.rectangle([x + 2, y + 6, x + 8, y + 8], fill=T)
-        draw.rectangle([x + 2, y + 8, x + 8, y + 10], fill=T)
-    elif kind == "ball":
-        draw.ellipse([x, y, x + W, y + H], outline=T, width=2)
-        cx, cy = x + W//2, y + H//2
-        draw.polygon([(cx, y + 1), (cx + 3, y + 4), (cx, y + 7), (cx - 3, y + 4)], fill=T)
+def draw_rocket_station(draw, x, y):
+    draw.rectangle([int(x-15), int(y-60), int(x+15), int(y)], fill='#CCC')
+    draw.polygon([(int(x-15), int(y-60)), (int(x), int(y-80)), (int(x+15), int(y-60))], fill=RED)
+    draw.ellipse([int(x-50), int(y-20), int(x+50), int(y+20)], outline=TEAL, width=4)
+    draw.ellipse([int(x-60), int(y-30), int(x+60), int(y+30)], outline=TEAL, width=2)
+    for sx, sy in [(x-80, y-70), (x+80, y-70), (x-90, y+40), (x+90, y+40), (x, y-100)]:
+        draw.ellipse([int(sx-3), int(sy-3), int(sx+3), int(sy+3)], fill=GOLD)
 
-def box(draw, x0, y0, x1, y1, fill=PAPER, outline=NAVY, wd=2):
-    draw.rectangle([int(x0), int(y0), int(x1), int(y1)], fill=fill, outline=outline, width=int(wd))
+def draw_building_flags(draw, x, y):
+    draw.rectangle([int(x-50), int(y-60), int(x+50), int(y+20)], fill='#DDD', outline=NAVY, width=2)
+    draw.rectangle([int(x-40), int(y-80), int(x+40), int(y-60)], fill='#BBB', outline=NAVY, width=2)
+    draw.polygon([(int(x-40), int(y-80)), (int(x), int(y-100)), (int(x+40), int(y-80))], fill=NAVY)
+    for i, fx in enumerate([x-60, x, x+60]):
+        draw.rectangle([int(fx-15), int(y-120), int(fx+15), int(y-90)], fill=[NAVY, TEAL, GOLD][i])
+        draw.line([(int(fx), int(y-120)), (int(fx), int(y-140))], fill=INK, width=2)
 
-def hline(draw, x0, y, x1, c, wd=2):
-    draw.line([(int(x0), int(y)), (int(x1), int(y))], fill=c, width=int(wd))
+def draw_chess_cricket(draw, x, y):
+    for i in range(4):
+        for j in range(4):
+            c = INK if (i+j)%2 else '#FFF'
+            draw.rectangle([int(x-60+i*30), int(y-60+j*30), int(x-30+i*30), int(y-30+j*30)], fill=c)
+    draw.ellipse([int(x-10), int(y-10), int(x+10), int(y+10)], fill=GOLD)
+    draw.rectangle([int(x+40), int(y-40), int(x+45), int(y+40)], fill='#8B4513')
+    draw.ellipse([int(x+55), int(y-10), int(x+75), int(y+10)], fill=RED)
 
-def news(d, img=None):
-    f7 = font(7)
-    out = []
-    for line, (lead, sub, tag) in [
-    ]:
-        pass
-    return ""
+def draw_asteroid(draw, x, y):
+    pts = [(int(x+40*0.8*__import__('math').cos(a)), int(y+40*0.8*__import__('math').sin(a))) for a in [i*0.5 for i in range(13)]]
+    draw.polygon(pts, fill='#666', outline='#444', width=2)
+    draw.ellipse([int(x-10), int(y-10), int(x+10), int(y+10)], fill='#333')
+    draw.polygon([(int(x+30), int(y)), (int(x+50), int(y-20)), (int(x+50), int(y+20))], fill='#AAA')
 
-def draw1(img):
+def draw_parliament(draw, x, y):
+    draw.ellipse([int(x-50), int(y-30), int(x+50), int(y+30)], fill='#EEE', outline=NAVY, width=3)
+    draw.rectangle([int(x-40), int(y+30), int(x+40), int(y+60)], fill='#DDD', outline=NAVY, width=2)
+    draw.polygon([(int(x-20), int(y-30)), (int(x), int(y-60)), (int(x+20), int(y-30))], fill=GOLD)
+    draw.line([(int(x-30), int(y+80)), (int(x+30), int(y+80))], fill=INK, width=3)
+    draw.polygon([(int(x-30), int(y+80)), (int(x), int(y+100)), (int(x+30), int(y+80))], fill=TEAL)
+
+def draw_supermarket(draw, x, y):
+    draw.rectangle([int(x-50), int(y-40), int(x+50), int(y+20)], fill='#DDD', outline=NAVY, width=2)
+    draw.rectangle([int(x-40), int(y-60), int(x+40), int(y-40)], fill=RED)
+    draw.text((int(x-20), int(y-55)), 'MARKET', font=FNT_BOLD_30, fill='#FFF')
+    draw.rectangle([int(x-10), int(y-10), int(x+10), int(y+10)], fill=TEAL, outline=NAVY, width=2)
+
+def draw_oil_derrick(draw, x, y):
+    draw.line([(int(x), int(y+40)), (int(x), int(y-60))], fill='#555', width=6)
+    for yy in range(-50, 40, 20):
+        draw.line([(int(x-20), int(y+yy)), (int(x+20), int(y+yy))], fill='#555', width=3)
+    draw_flames(draw, x, y-70, 30)
+    draw.rectangle([int(x-30), int(y+30), int(x+30), int(y+50)], fill='#333')
+
+def draw_variant1():
+    img = Image.new('RGB', (W, H), BG)
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, S, S], fill=PAPER)
-    hline(d, 0, 0, S, INK, 3)
-    box(d, 0, 3, W, 84, NAVY, NAVY)
-    f_mk = font(34, True)
-    d.text((24, 14), "THE WORLD IN ONE IMAGE", font=f_mk, fill=PAPER)
-    d.text((S - 300, 20), "NOVEMBER 2026 EDITION", font=font(16, True), fill=GOLD)
-    d.line([(24, 78), (S - 24, 78)], fill=GOLD, width=2)
-    f_d1 = font(24, True)
-    f_d2 = font(20)
-    d.text((24, 94), "THURSDAY", font=f_d1, fill=NAVY)
-    d.text((24 + d.textlength("THURSDAY", font=f_d1) + 16, 96), "26 NOVEMBER 2026", font=f_d2, fill=RED)
-    d.line([(24, 138), (S - 24, 138)], fill=INK, width=2)
-    # hero
-    hline(d, 24, 150, S - 24, RED, 2)
-    f_hl = font(40, True)
-    hl = wrap_text(d, "Fuel tanker crash kills 30 on Cairo Ring Road", f_hl, S - 48)
-    draw_wrapped(d, (24, 156), hl, f_hl, INK, 1.05)
-    yy = 156 + int(len(hl) * 40 * 1.12) + 6
-    f_su = font(18)
-    su = wrap_text(d, "A fuel tanker crashed and caught fire on Cairo's Ring Road in the Warraq district of Giza, engulfing more than two dozen cars and motorcycles; Egypt's health ministry calls the toll of 30 killed and 25 injured preliminary.", f_su, S - 48 - 70)
-    draw_wrapped(d, (94, yy), su, f_su, NAVY, 1.25)
-    x0, y0, x1, y1 = 24, yy + 6, S - 24, yy + 6 + 72
-    box(d, x0, y0, x1, y1, PAPER, INK, 1)
-    panel_icon(d, "flame", x0 + 12, y0 + (72 - 12)//2, None)
-    f_big = font(40, True)
-    f_lab = font(12, True)
-    d.text((x0 + 44, y0 + 8), "30", font=f_big, fill=RED)
-    d.text((x0 + 44, y0 + 44), "KILLED", font=f_lab, fill=NAVY)
-    d.text((x0 + 140, y0 + 8), "25", font=f_big, fill=TEAL)
-    d.text((x0 + 140, y0 + 44), "INJURED", font=f_lab, fill=NAVY)
-    d.text((x0 + 270, y0 + 8), "2026", font=f_big, fill=INK)
-    d.text((x0 + 270, y0 + 44), "WARQAQ, GIZA", font=f_lab, fill=NAVY)
-    d.line([(x0 + 40, y0 + 8), (x0 + 40, y1 - 8)], fill=INK, width=1)
-    d.line([(x0 + 130, y0 + 8), (x0 + 130, y1 - 8)], fill=INK, width=1)
-    d.line([(x0 + 260, y0 + 8), (x0 + 260, y1 - 8)], fill=INK, width=1)
-    d.text((x1 - 100, y0 + 8), "EGYPT", font=f_lab, fill=RED)
-    yy = y1 + 12
-    # tiles 2x2: stories 2,3,4,5
-    f_tit = font(16, True)
-    f_sub = font(13)
-    f_chip = font(11, True)
-
-def _main():
-    print("run generate_image.py with a variant number argument")
+    
+    d.rectangle([0, 0, W, int(H*0.14)], fill=NAVY)
+    draw_wrapped(d, (int(W*0.05), int(H*0.01)), ['THURSDAY 26 NOVEMBER 2026'], FNT_BOLD_44, '#FFF')
+    draw_wrapped(d, (int(W*0.05), int(H*0.07)), ['THE WORLD IN ONE IMAGE'], FNT_BOLD_36, GOLD)
+    
+    draw_globe(d, W//2, int(H*0.35), int(W*0.22))
+    
+    panels = [
+        (int(W*0.04), int(H*0.58), int(W*0.3), int(H*0.18), 'EGYPT: TANKER FIRE KILLS 30+ ON CAIRO RING ROAD', draw_tanker, (int(W*0.19), int(H*0.68))),
+        (int(W*0.36), int(H*0.58), int(W*0.3), int(H*0.18), 'GULF: HOUTHIS STRIKE SAUDI PORTS INCL RAS TANURA', draw_oil_derrick, (int(W*0.51), int(H*0.68))),
+        (int(W*0.68), int(H*0.58), int(W*0.3), int(H*0.18), 'EUROPE: EU LEADERS MEET IN BRUSSELS FOR SPECIAL COUNCIL', draw_building_flags, (int(W*0.83), int(H*0.68))),
+        (int(W*0.04), int(H*0.78), int(W*0.3), int(H*0.18), 'SPACE: PAKISTAN ASTRONAUT DOCKS AT TIANGONG', draw_rocket_station, (int(W*0.19), int(H*0.88))),
+        (int(W*0.36), int(H*0.78), int(W*0.3), int(H*0.18), 'COLOMBIA: POLICE FREE 20 HOSTAGES IN CARTAGENA', draw_supermarket, (int(W*0.51), int(H*0.88))),
+        (int(W*0.68), int(H*0.78), int(W*0.3), int(H*0.18), 'SPORT: GUKESH DRAWS; 15YO SMASHES 204 OFF 53', draw_chess_cricket, (int(W*0.83), int(H*0.88))),
+    ]
+    for px, py, pw, ph, headline, pic_fn, pic_xy in panels:
+        d.rectangle([px, py, px+pw, py+ph], fill='#FFF', outline=NAVY, width=2)
+        pic_fn(d, pic_xy[0], pic_xy[1])
+        lines = wrap_text(d, headline, FNT_BOLD_30, pw - 20)
+        draw_wrapped(d, (px+10, py+int(ph*0.55)), lines[:2], FNT_BOLD_30, INK)
+    
+    d.rectangle([0, int(H*0.86), W, H], fill=NAVY)
+    bot_panels = [
+        (int(W*0.05), int(H*0.87), int(W*0.44), int(H*0.11), 'INDIA: CONSTITUTION DAY & 26/11; IITS ADD 6K SEATS; RS 15K CR NEPAL PACKAGE', draw_parliament, (int(W*0.22), int(H*0.93))),
+        (int(W*0.52), int(H*0.87), int(W*0.44), int(H*0.11), 'SCIENCE: CLOSE-UP OF ASTEROID HIT IN PLANETARY DEFENCE TEST', draw_asteroid, (int(W*0.74), int(H*0.93))),
+    ]
+    for px, py, pw, ph, headline, pic_fn, pic_xy in bot_panels:
+        d.rectangle([px, py, px+pw, py+ph], fill='#FFF', outline=TEAL, width=2)
+        pic_fn(d, pic_xy[0], pic_xy[1])
+        lines = wrap_text(d, headline, FNT_BOLD_30, pw - 20)
+        draw_wrapped(d, (px+10, py+int(ph*0.55)), lines[:2], FNT_BOLD_30, INK)
+    
+    return img
 
 def main():
-    variant = sys.argv[1] if len(sys.argv) > 1 else "1"
-    fn = globals().get("draw_variant" + variant)
-    if fn is None:
-        print("unknown variant", variant)
+    variant = sys.argv[1] if len(sys.argv) > 1 else '1'
+    fn = globals().get('draw_variant' + variant)
+    if not fn:
+        print(f'Unknown variant {variant}')
         sys.exit(1)
-    img = Image.new("RGB", (S, S), PAPER)
-    fn(img)
-    path = "variant_" + variant + ".png"
-    img.save(path, "PNG")
-    import os
-    sz = os.path.getsize(path)
-    print("wrote variant_%s.png 1024x1024 bytes %d" % (variant, sz))
+    img = fn()
+    fname = f'variant_{variant}.png'
+    img.save(fname)
+    print(f'wrote {fname} 1024x1024 bytes {len(img.tobytes())}')
 
-import sys
-from PIL import Image, ImageDraw, ImageFont
-
-S = 1024
-PAPER = 0xF7F1E3
-INK = 0x14213D
-RED = 0xC1272D
-NAVY = 0x1B2A4A
-TEAL = 0x0E7C7B
-GOLD = 0xD9A441
-
-FB_P = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-FR_P = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-
-_font_cache = {}
-
-def font(size, bold=False):
-    size = int(size)
-    key = (size, bold)
-    if key not in _font_cache:
-        _font_cache[key] = ImageFont.truetype(FB_P if bold else FR_P, size)
-    return _font_cache[key]
-
-def wrap_text(draw, text, fnt, maxw):
-    words = text.split()
-    lines = []
-    cur = ""
-    for w in words:
-        t = (cur + " " + w).strip()
-        if draw.textlength(t, font=fnt) <= maxw:
-            cur = t
-        else:
-            if cur:
-                lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
-    return lines if lines else [""]
-
-def draw_wrapped(draw, xy, lines, fnt, fill, leading=None):
-    x, y = int(xy[0]), int(xy[1])
-    for line in lines:
-        draw.text((x, y), line, font=fnt, fill=fill)
-        y += int(fnt.size * (1.0 if leading is None else leading))
-
-def rrect(draw, box, radius, fill=None, outline=None, width=1):
-    draw.rounded_rectangle([int(box[0]), int(box[1]), int(box[2]), int(box[3])],
-                           radius=int(radius), fill=fill, outline=outline, width=int(width))
-
-MONTHA = BLUE = TEAL
-DAY = GOLD
-
-def chip(draw, xy, label, color):
-    f = font(13, True)
-    w = int(draw.textlength(label, font=f))
-    x, y = int(xy[0]), int(xy[1])
-    h = int(f.size * 1.5)
-    pad = 6
-    rrect(draw, (x, y, x + w + 2 * pad, y + h), h // 2, fill=color)
-    draw.text((x + pad, y + (h - f.size)//2), label, font=f, fill=PAPER)
-    return x + w + 2 * pad, y + h
-
-def panel_icon(draw, kind, x, y, colors):
-    W, H, L, R, A, T, G = [int(v) for v in (15, 12, TEAL, GOLD, RED, NAVY, 0x8A94A6)]
-    if kind == "flame":
-        pts = [(x + W//2, y), (x + W, y + H), (x, y + H)]
-        draw.polygon([tuple(map(int, p)) for p in pts], fill=RED)
-        draw.ellipse([x + 4, y + 5, x + W - 4, y + H], fill=GOLD)
-    elif kind == "ship":
-        rrect(draw, (x, y + 2, x + W, y + 7), 1, fill=T)
-        draw.polygon([(x + 7, y), (x + 10, y + 2), (x + 4, y + 2)], fill=T)
-        draw.line([(x, y + 9), (x + W, y + 9)], fill=INK, width=1)
-    elif kind == "building":
-        draw.rectangle([x, y + 2, x + W, y + H], fill=T)
-        for i in range(3):
-            for j in range(2):
-                draw.rectangle([x + 2 + i * 4, y + 4 + j * 3, x + 4 + i * 4, y + 6 + j * 3], fill=PAPER)
-    elif kind == "rocket":
-        draw.polygon([(x + W//2, y), (x + 11, y + H), (x + W - 11, y + H)], fill=T)
-        draw.ellipse([x + W//2 - 2, y + 3, x + W//2 + 2, y + 6], fill=PAPER)
-        draw.line([(x + 3, y + H), (x + 7, y + H - 3)], fill=RED, width=1)
-    elif kind == "shield":
-        draw.polygon([(x + W//2, y), (x + W, y + 3), (x + W//2, y + H), (x, y + 3)], fill=T)
-        draw.line([(x + W//2, y + 2), (x + W//2, y + H - 2)], fill=PAPER, width=1)
-    elif kind == "flag":
-        draw.line([(x + 2, y), (x + 2, y + H)], fill=G, width=1)
-        draw.rectangle([x + 2, y + 1, x + 8, y + 6], fill=GOLD)
-        draw.rectangle([x + 2, y + 6, x + 8, y + 8], fill=T)
-        draw.rectangle([x + 2, y + 8, x + 8, y + 10], fill=T)
-    elif kind == "ball":
-        draw.ellipse([x, y, x + W, y + H], outline=T, width=2)
-        cx, cy = x + W//2, y + H//2
-        draw.polygon([(cx, y + 1), (cx + 3, y + 4), (cx, y + 7), (cx - 3, y + 4)], fill=T)
-
-def box(draw, x0, y0, x1, y1, fill=PAPER, outline=NAVY, wd=2):
-    draw.rectangle([int(x0), int(y0), int(x1), int(y1)], fill=fill, outline=outline, width=int(wd))
-
-def hline(draw, x0, y, x1, c, wd=2):
-    draw.line([(int(x0), int(y)), (int(x1), int(y))], fill=c, width=int(wd))
-
-def news(d, img=None):
-    f7 = font(7)
-    out = []
-    for line, (lead, sub, tag) in []:
-        pass
-    return ""
-
-def draw1(img):
+def draw_variant2():
+    img = Image.new('RGB', (W, H), BG)
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, S, S], fill=PAPER)
-    hline(d, 0, 0, S, INK, 3)
-    box(d, 0, 3, W, 84, NAVY, NAVY)
-    f_mk = font(34, True)
-    d.text((24, 14), "THE WORLD IN ONE IMAGE", font=f_mk, fill=PAPER)
-    d.text((S - 300, 20), "NOVEMBER 2026 EDITION", font=font(16, True), fill=GOLD)
-    d.line([(24, 78), (S - 24, 78)], fill=GOLD, width=2)
-    f_d1 = font(24, True)
-    f_d2 = font(20)
-    d.text((24, 94), "THURSDAY", font=f_d1, fill=NAVY)
-    d.text((24 + d.textlength("THURSDAY", font=f_d1) + 16, 96), "26 NOVEMBER 2026", font=f_d2, fill=RED)
-    d.line([(24, 138), (S - 24, 138)], fill=INK, width=2)
-    # hero
-    hline(d, 24, 150, S - 24, RED, 2)
-    f_hl = font(40, True)
-    hl = wrap_text(d, "Fuel tanker crash kills 30 on Cairo Ring Road", f_hl, S - 48)
-    draw_wrapped(d, (24, 156), hl, f_hl, INK, 1.05)
-    yy = 156 + int(len(hl) * 40 * 1.12) + 6
-    f_su = font(18)
-    su = wrap_text(d, "A fuel tanker crashed and caught fire on Cairo's Ring Road in the Warraq district of Giza, engulfing more than two dozen cars and motorcycles; Egypt's health ministry calls the toll of 30 killed and 25 injured preliminary.", f_su, S - 48 - 70)
-    draw_wrapped(d, (94, yy), su, f_su, NAVY, 1.25)
-    x0, y0, x1, y1 = 24, yy + 6, S - 24, yy + 6 + 72
-    box(d, x0, y0, x1, y1, PAPER, INK, 1)
-    panel_icon(d, "flame", x0 + 12, y0 + (72 - 12)//2, None)
-    f_big = font(40, True)
-    f_lab = font(12, True)
-    d.text((x0 + 44, y0 + 8), "30", font=f_big, fill=RED)
-    d.text((x0 + 44, y0 + 44), "KILLED", font=f_lab, fill=NAVY)
-    d.text((x0 + 140, y0 + 8), "25", font=f_big, fill=TEAL)
-    d.text((x0 + 140, y0 + 44), "INJURED", font=f_lab, fill=NAVY)
-    d.text((x0 + 270, y0 + 8), "2026", font=f_big, fill=INK)
-    d.text((x0 + 270, y0 + 44), "WARQAQ, GIZA", font=f_lab, fill=NAVY)
-    d.line([(x0 + 40, y0 + 8), (x0 + 40, y1 - 8)], fill=INK, width=1)
-    d.line([(x0 + 130, y0 + 8), (x0 + 130, y1 - 8)], fill=INK, width=1)
-    d.line([(x0 + 260, y0 + 8), (x0 + 260, y1 - 8)], fill=INK, width=1)
-    d.text((x1 - 100, y0 + 8), "EGYPT", font=f_lab, fill=RED)
-    yy = y1 + 12
-    # tiles 2x2: stories 2,3,4,5
-    f_tit = font(16, True)
-    f_sub = font(13)
-    f_chip = font(11, True)
-
-def draw_variant2(img):
-    d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, S, S], fill=PAPER)
+    
     # Top date banner
-    banner_h = 80
-    rrect(d, (0, 0, S, banner_h), 0, fill=NAVY)
-    f_date = font(36, True)
-    date_text = "THURSDAY 26 NOVEMBER 2026"
-    tw = d.textlength(date_text, font=f_date)
-    d.text(((S - tw) // 2, (banner_h - f_date.size) // 2), date_text, font=f_date, fill=PAPER)
-    # Gold accent line
-    d.line([(60, banner_h), (S - 60, banner_h)], fill=GOLD, width=3)
+    d.rectangle([0, 0, W, 100], fill=NAVY)
+    draw_wrapped(d, (40, 15), ['THURSDAY 26 NOVEMBER 2026'], FNT_BOLD_44, '#FFF')
     
-    # 2x3 grid for stories 1-6
-    grid_top = banner_h + 10
-    grid_h = S - grid_top - 10
-    panel_w = (S - 30) // 2  # 2 columns with margins
-    panel_h = (grid_h - 20) // 3  # 3 rows with gaps
-    
-    stories = [
-        {"tag": "EGYPT", "color": RED, "headline": "Fuel tanker crash kills 30 on Cairo Ring Road",
-         "summary": "Tanker exploded on Ring Road in Warraq district, engulfing 20+ vehicles; health ministry toll preliminary.", "icon": "flame"},
-        {"tag": "GULF", "color": TEAL, "headline": "Houthis claim attacks on Saudi ports including Ras Tanura",
-         "summary": "Retaliatory strikes hit oil refinery; India condemns after two nationals injured.", "icon": "ship"},
-        {"tag": "EUROPE", "color": NAVY, "headline": "EU leaders convene Special Council in Brussels",
-         "summary": "London and Brussels agree closer economic ties at 26-27 Nov summit.", "icon": "building"},
-        {"tag": "SPACE", "color": GOLD, "headline": "Pakistan's first astronaut docks at Tiangong station",
-         "summary": "Muhammad Zeeshan Ali aboard Shenzhou-24, first foreign visitor to Chinese station.", "icon": "rocket"},
-        {"tag": "COLOMBIA", "color": RED, "headline": "Police free 20 hostages after 17-hour supermarket siege",
-         "summary": "Cartagena standoff ends with one gunman killed; nation marks 10 years since peace accord.", "icon": "shield"},
-        {"tag": "INDIA", "color": TEAL, "headline": "Constitution Day and 26/11 anniversary observed",
-         "summary": "IITs add 6,000 seats in robotics, AI, space; Rs 15,000 cr Nepal package announced.", "icon": "flag"},
+    # 2x2 big panels
+    pad, gap = 20, 15
+    pw = (W - 2*pad - gap) // 2
+    ph = (H - 110 - 2*pad - gap - 100) // 2
+    positions = [
+        (pad, 110), (pad + pw + gap, 110),
+        (pad, 110 + ph + gap), (pad + pw + gap, 110 + ph + gap)
     ]
+    panels = [
+        ('CAIRO TANKER FIRE KILLS 30', draw_tanker, (positions[0][0]+pw//2, positions[0][1]+ph//2)),
+        ('PAKISTAN ASTRONAUT DOCKS AT TIANGONG', draw_rocket_station, (positions[1][0]+pw//2, positions[1][1]+ph//2)),
+        ('EU LEADERS MEET IN BRUSSELS', draw_building_flags, (positions[2][0]+pw//2, positions[2][1]+ph//2)),
+        ('GUKESH DRAWS; TEEN SMASHES 204', draw_chess_cricket, (positions[3][0]+pw//2, positions[3][1]+ph//2)),
+    ]
+    for i, (px, py) in enumerate(positions):
+        d.rectangle([px, py, px+pw, py+ph], fill='#FFF', outline=NAVY, width=3)
+        headline, pic_fn, pic_xy = panels[i]
+        pic_fn(d, pic_xy[0], pic_xy[1])
+        lines = wrap_text(d, headline, FNT_BOLD_36, pw - 30)
+        draw_wrapped(d, (px+15, py+ph-100), lines[:2], FNT_BOLD_36, INK)
     
-    for idx, s in enumerate(stories):
-        col = idx % 2
-        row = idx // 2
-        x0 = 15 + col * (panel_w + 10)
-        y0 = grid_top + 10 + row * (panel_h + 10)
-        x1 = x0 + panel_w
-        y1 = y0 + panel_h
-        
-        # Panel background
-        box(d, x0, y0, x1, y1, PAPER, NAVY, 1)
-        
-        # Header chip
-        chip_x = x0 + 12
-        chip_y = y0 + 12
-        chip(d, (chip_x, chip_y), s["tag"], s["color"])
-        
-        # Headline (up to 2 lines)
-        f_hl = font(18, True)
-        hl_lines = wrap_text(d, s["headline"], f_hl, panel_w - 40)
-        hl_lines = hl_lines[:2]
-        hl_y = chip_y + 30
-        draw_wrapped(d, (chip_x, hl_y), hl_lines, f_hl, INK, 1.15)
-        
-        # Summary (one line)
-        f_sum = font(13)
-        sum_lines = wrap_text(d, s["summary"], f_sum, panel_w - 40)
-        sum_y = hl_y + len(hl_lines) * int(f_hl.size * 1.15) + 8
-        if sum_lines:
-            draw_wrapped(d, (chip_x, sum_y), sum_lines[:1], f_sum, NAVY, 1.2)
-        
-        # Icon bottom right
-        icon_x = x1 - 30
-        icon_y = y1 - 25
-        panel_icon(d, s["icon"], icon_x, icon_y, None)
+    # Bottom four chips
+    by = H - 100
+    chip_w = (W - 5*pad) // 4
+    chips = [
+        ('GULF', draw_oil_derrick),
+        ('COLOMBIA', draw_supermarket),
+        ('INDIA', draw_parliament),
+        ('SCIENCE', draw_asteroid),
+    ]
+    for i, (label, pic_fn) in enumerate(chips):
+        cx = pad + i*(chip_w + pad)
+        d.rectangle([cx, by, cx+chip_w, by+90], fill='#FFF', outline=TEAL, width=2)
+        draw_wrapped(d, (cx+10, by+28), [label], FNT_BOLD_30, INK)
+    return img
 
-def draw_variant3(img):
+def draw_variant3():
+    img = Image.new('RGB', (W, H), BG)
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, S, S], fill=PAPER)
     
-    # Date line at top
-    f_date = font(28, True)
-    d.text((40, 20), "THURSDAY 26 NOVEMBER 2026", font=f_date, fill=NAVY)
-    d.line([(40, 58), (S - 40, 58)], fill=GOLD, width=2)
+    # Masthead
+    d.rectangle([0, 0, W, 120], fill=NAVY)
+    draw_wrapped(d, (40, 10), ['THE WORLD IN ONE IMAGE'], FNT_BOLD_44, '#FFF')
+    draw_wrapped(d, (40, 65), ['THURSDAY 26 NOVEMBER 2026'], FNT_BOLD_30, GOLD)
     
-    # Huge headline for story 1
-    f_huge = font(42, True)
-    hl1 = "Fuel tanker crash kills 30 on Cairo Ring Road"
-    hl_lines = wrap_text(d, hl1, f_huge, S - 80)
-    draw_wrapped(d, (40, 70), hl_lines, f_huge, INK, 1.1)
+    # Lead panel - Cairo tanker fire large
+    lx, ly, lw, lh = 30, 140, 600, 380
+    d.rectangle([lx, ly, lx+lw, ly+lh], fill='#FFF', outline=NAVY, width=3)
+    draw_tanker(d, lx+lw//2, ly+lh//2)
+    draw_flames(d, lx+lw//2+30, ly+lh//2-20, 60)
+    lines = wrap_text(d, 'CAIRO TANKER FIRE KILLS 30+ ON RING ROAD', FNT_BOLD_36, lw - 40)
+    draw_wrapped(d, (lx+20, ly+20), lines[:2], FNT_BOLD_36, RED)
     
-    # Red rule
-    rule_y = 70 + len(hl_lines) * int(f_huge.size * 1.1) + 10
-    d.line([(40, rule_y), (S - 40, rule_y)], fill=RED, width=3)
-    
-    # Five horizontal brief rows for stories 2-6
-    briefs = [
-        {"tag": "GULF", "color": TEAL, "headline": "Houthis strike Saudi ports, hit Ras Tanura refinery",
-         "summary": "India condemns retaliatory attacks after two nationals injured."},
-        {"tag": "EUROPE", "color": NAVY, "headline": "EU Special Council in Brussels; UK-Brussels reset agreed",
-         "summary": "Leaders meet 26-27 Nov to bring economies closer."},
-        {"tag": "SPACE", "color": GOLD, "headline": "Pakistan astronaut Muhammad Zeeshan Ali docks at Tiangong",
-         "summary": "First foreign visitor to Chinese station aboard Shenzhou-24."},
-        {"tag": "COLOMBIA", "color": RED, "headline": "Cartagena supermarket siege ends; 20 hostages freed after 17 hours",
-         "summary": "One gunman killed; Colombia marks decade since peace deal."},
-        {"tag": "INDIA", "color": TEAL, "headline": "Constitution Day & 26/11 anniversary; IITs add 6,000 tech seats",
-         "summary": "Rs 15,000 cr Nepal package; call for human control of military AI."},
-        {"tag": "SPORT", "color": GOLD, "headline": "Gukesh draws Game 2 vs Sindarov; Sooryavanshi 204 off 53 balls",
-         "summary": "Chess world championship tied; teen prodigy smashes T20 record."},
-        {"tag": "SCIENCE", "color": TEAL, "headline": "Asteroid-defence close-up images show a new crater",
-         "summary": "Hera mission captures detailed impact site on Dimorphos."},
+    # Four horizontal brief rows (stories 2-5)
+    rows = [
+        ('HOUTHIS STRIKE SAUDI PORTS INCL RAS TANURA', draw_oil_derrick),
+        ('EU LEADERS MEET IN BRUSSELS FOR SPECIAL COUNCIL', draw_building_flags),
+        ('PAKISTAN ASTRONAUT DOCKS AT TIANGONG', draw_rocket_station),
+        ('POLICE FREE 20 HOSTAGES IN CARTAGENA', draw_supermarket),
     ]
+    ry = ly + lh + 20
+    for headline, pic_fn in rows:
+        d.rectangle([30, ry, W-30, ry+90], fill='#FFF', outline=NAVY, width=2)
+        pic_fn(d, 70, ry+45)
+        lines = wrap_text(d, headline, FNT_BOLD_30, W - 220)
+        draw_wrapped(d, (140, ry+15), lines[:1], FNT_BOLD_30, INK)
+        ry += 100
     
-    f_brief_h = font(18, True)
-    f_brief_s = font(14)
-    row_h = 78
-    start_y = rule_y + 20
-    
-    for i, b in enumerate(briefs):
-        ry = start_y + i * (row_h + 8)
-        # Chip
-        chip(d, (40, ry + 8), b["tag"], b["color"])
-        # Headline
-        chip_w = int(d.textlength(b["tag"], font=font(13, True))) + 12 + 12
-        hx = 40 + chip_w + 16
-        hl = wrap_text(d, b["headline"], f_brief_h, S - hx - 40)
-        draw_wrapped(d, (hx, ry + 4), hl[:1], f_brief_h, INK, 1.1)
-        # Summary
-        sum_y = ry + 4 + int(f_brief_h.size * 1.1) + 4
-        sl = wrap_text(d, b["summary"], f_brief_s, S - hx - 40)
-        draw_wrapped(d, (hx, sum_y), sl[:1], f_brief_s, NAVY, 1.2)
-        # Divider line
-        if i < 6:
-            d.line([(40, ry + row_h + 4), (S - 40, ry + row_h + 4)], fill=0xD0C9B8, width=1)
-    
-    # Bottom strip with two ticker items
-    strip_y = S - 100
-    rrect(d, (0, strip_y, S, S), 0, fill=NAVY)
-    f_tick = font(13, True)
-    f_tick_s = font(12)
-    tickers = [
-        "IPL 2027 auction: 1,220 players registered  |  Russia admits ~500,000 lost in Ukraine war",
-        "US readies new global tariffs plan  |  North Korea expels Swiss diplomat  |  6 dead in Mississippi plane crash  |  Flipkart CEO to step down in Dec",
+    # Bottom three chips: sport, India, science
+    by = H - 100
+    cw = (W - 4*30) // 3
+    chips = [
+        ('SPORT', draw_chess_cricket),
+        ('INDIA', draw_parliament),
+        ('SCIENCE', draw_asteroid),
     ]
-    for i, t in enumerate(tickers):
-        ty = strip_y + 15 + i * 35
-        # Bullet
-        d.ellipse([25, ty + 5, 31, ty + 11], fill=GOLD)
-        draw_wrapped(d, (40, ty), [t], f_tick_s, PAPER, 1.2)
-
-def _main():
-    print("run generate_image.py with a variant number argument")
-
-def main():
-    variant = sys.argv[1] if len(sys.argv) > 1 else "1"
-    fn = globals().get("draw_variant" + variant)
-    if fn is None:
-        print("unknown variant", variant)
-        sys.exit(1)
-    img = Image.new("RGB", (S, S), PAPER)
-    fn(img)
-    path = "variant_" + variant + ".png"
-    img.save(path, "PNG")
-    import os
-    sz = os.path.getsize(path)
-    print("wrote variant_%s.png 1024x1024 bytes %d" % (variant, sz))
-
-if __name__ == "__main__":
-    main()
+    for i, (label, pic_fn) in enumerate(chips):
+        cx = 30 + i*(cw + 30)
+        d.rectangle([cx, by, cx+cw, by+90], fill='#FFF', outline=TEAL, width=2)
+        pic_fn(d, cx+cw//2, by+45)
+        draw_wrapped(d, (cx+15, by+10), [label], FNT_BOLD_30, INK)
+    return img
 if __name__ == "__main__":
     main()
