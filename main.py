@@ -2,27 +2,22 @@ import os
 import shutil
 import sys
 
-PNG_MAGIC = b'\x89PNG\r\n\x1a\n'
-
 def main() -> int:
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    src = os.path.join(script_dir, 'entry.png')
-    out_dir = os.environ.get('MAKEFUN_OUTPUT_DIR', 'out')
-    dst = os.path.join(out_dir, 'entry.png')
-
-    if not os.path.exists(src):
-        print(f'Source not found: {src}', file=sys.stderr)
-        return 1
-
-    os.makedirs(out_dir, exist_ok=True)
-    shutil.copyfile(src, dst)
-
+    output_dir = os.environ.get('MAKEFUN_OUTPUT_DIR', 'out')
+    os.makedirs(output_dir, exist_ok=True)
+    
+    src = 'entry.png'
+    dst = os.path.join(output_dir, 'entry.png')
+    
+    shutil.copy2(src, dst)
+    
     with open(dst, 'rb') as f:
-        header = f.read(len(PNG_MAGIC))
-    if header != PNG_MAGIC:
-        print('Copied file is not a valid PNG', file=sys.stderr)
+        magic = f.read(8)
+    
+    if magic != b'\x89PNG\r\n\x1a\n':
+        print(f'ERROR: {dst} does not start with PNG magic bytes', file=sys.stderr)
         return 1
-
+    
     size = os.path.getsize(dst)
     print(f'{dst} {size}')
     return 0
