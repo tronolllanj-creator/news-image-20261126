@@ -5,7 +5,8 @@ import sys
 PNG_MAGIC = b'\x89PNG\r\n\x1a\n'
 
 def main() -> int:
-    src = 'entry.png'
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    src = os.path.join(script_dir, 'entry.png')
     out_dir = os.environ.get('MAKEFUN_OUTPUT_DIR', 'out')
     dst = os.path.join(out_dir, 'entry.png')
 
@@ -14,7 +15,7 @@ def main() -> int:
         return 1
 
     os.makedirs(out_dir, exist_ok=True)
-    shutil.copy2(src, dst)
+    shutil.copyfile(src, dst)
 
     with open(dst, 'rb') as f:
         header = f.read(len(PNG_MAGIC))
